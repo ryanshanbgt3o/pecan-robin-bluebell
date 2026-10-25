@@ -37,9 +37,12 @@ jobs:
           tags: tag:mnsj-exit
           hostname: mnsj-exit-${{ inputs.session_id }}
           version: 1.104.2
-          args: --advertise-exit-node --accept-dns=false --accept-routes=false
+          # Action 已内置 --accept-routes，入网后再用 set 关闭，避免重复参数。
+          args: --advertise-exit-node --accept-dns=false
           tailscaled-args: --tun=tailscale0
           log-mode: quiet
+      - name: Ignore routes advertised by other nodes
+        run: sudo tailscale set --accept-routes=false
       - name: Serve session until stopped or expired
         env:
           MNSJ_SESSION_ID: ${{ inputs.session_id }}
