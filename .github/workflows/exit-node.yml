@@ -1,0 +1,51 @@
+name: Temporary Tailscale exit node
+run-name: mnsj-${{ inputs.session_id }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      session_id:
+        description: Client-generated session ID
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: mnsj-tunnel-exit
+  cancel-in-progress: false
+
+jobs:
+  exit-node:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Validate session and enable forwarding
+        env:
+          MNSJ_SESSION_ID: ${{ inputs.session_id }}
+        run: |
+          python3 runner/control.py --validate
+          sudo sysctl -w net.ipv4.ip_forward=1 net.ipv6.conf.all.forwarding=1
+      - name: Join tailnet as an ephemeral exit node
+        uses: tailscale/github-action@99a8333667fff04fdd6cffb46dfd409f8329a7bf # v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:mnsj-exit
+          hostname: mnsj-exit-${{ inputs.session_id }}
+          version: 1.104.2
+          args: --advertise-exit-node --accept-dns=false --accept-routes=false
+          tailscaled-args: --tun=tailscale0
+          log-mode: quiet
+      - name: Serve session until stopped or expired
+        env:
+          MNSJ_SESSION_ID: ${{ inputs.session_id }}
+          MNSJ_CONTROL_TOKEN: ${{ secrets.MNSJ_CONTROL_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+        run: bash runner/runner.sh
+      - name: Remove ephemeral node
+        if: always()
+        run: timeout 15s sudo tailscale logout || true
